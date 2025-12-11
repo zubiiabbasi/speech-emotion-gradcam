@@ -5,14 +5,10 @@ import csv
 from pathlib import Path
 from extract_transcript import process_tess_directory
 
-def generate_metadata_csv(data_dir=None, output_file="tess_metadata.csv", model_name="base"):
+def generate_metadata_csv(data_dir, output_file, model_name="base"):
     
-    # If no data_dir provided, use project root/data
-    if data_dir is None:
-        project_root = Path(__file__).parent.parent
-        data_dir = project_root / "data"
-    else:
-        data_dir = Path(data_dir)
+    data_dir = Path(data_dir)
+    output_file = Path(output_file)
 
     print(f"Generating metadata CSV from {data_dir}...")
     
@@ -23,11 +19,8 @@ def generate_metadata_csv(data_dir=None, output_file="tess_metadata.csv", model_
         print("No files found to process!")
         return
     
-    # Write to CSV
-    output_path = Path(output_file)
-    
     try:
-        with open(output_path, 'w', newline='', encoding='utf-8') as csvfile:
+        with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
             fieldnames = ['Path', 'Speaker', 'Emotion', 'Transcript']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             
@@ -43,32 +36,19 @@ def generate_metadata_csv(data_dir=None, output_file="tess_metadata.csv", model_
                     'Transcript': result['transcript']
                 })
         
-        print(f"\nCSV file created successfully: {output_path}")
+        print(f"\nCSV file created successfully: {output_file}")
         print(f"  Total records: {len(results)}")
-        
-        # Display summary statistics
-        emotion_counts = {}
-        for result in results:
-            emotion = result['emotion']
-            emotion_counts[emotion] = emotion_counts.get(emotion, 0) + 1
-        
-        print("\nEmotion distribution:")
-        for emotion, count in sorted(emotion_counts.items()):
-            print(f"  {emotion}: {count} files")
-        
-        # Display speaker distribution
-        speaker_counts = {}
-        for result in results:
-            speaker = result['speaker']
-            speaker_counts[speaker] = speaker_counts.get(speaker, 0) + 1
-        
-        print("\nSpeaker distribution:")
-        for speaker, count in sorted(speaker_counts.items()):
-            print(f"  {speaker}: {count} files")
     
     except Exception as e:
         print(f"Error writing CSV file: {str(e)}")
 
 
 if __name__ == "__main__":
-    generate_metadata_csv()
+    # Define paths
+    project_root = Path(__file__).parent.parent
+    data_dir = project_root / "data"
+    text_analysis_dir = Path(__file__).parent
+    output_file = text_analysis_dir / "tess_metadata.csv"
+    
+    # Generate CSV
+    generate_metadata_csv(str(data_dir), str(output_file))

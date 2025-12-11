@@ -67,5 +67,4 @@ if __name__ == "__main__":
     # Process all TESS files
     print("Starting ASR extraction from TESS dataset...")
     results = process_tess_directory(model_name="base")
-    
     print(f"\n\nTotal files processed: {len(results)}")
