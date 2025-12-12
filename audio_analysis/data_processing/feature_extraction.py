@@ -41,7 +41,7 @@ def extract_mel_spectrogram(audio_path, n_mels=128, n_fft=2048, hop_length=512, 
         return None
 
 
-def process_tess_dataset(data_dir="data", output_file="audio_analysis/tess_features.pkl"):
+def process_tess_dataset(data_dir="data", output_file="tess_features.pkl"):
 
     data_path = Path(data_dir)
     output_path = Path(output_file)
@@ -128,5 +128,17 @@ def process_tess_dataset(data_dir="data", output_file="audio_analysis/tess_featu
 
 
 if __name__ == "__main__":
-    # Process TESS dataset
-    data = process_tess_dataset(data_dir="data", output_file="audio_analysis/tess_features.pkl")
+    from pathlib import Path
+    # Find data directory
+    data_dir = Path("data")
+    if not data_dir.exists():
+        data_dir = Path("..") / "data"
+    
+    output_file = Path("tess_features.pkl")
+    if not output_file.parent.exists():
+        output_file = Path(".") / "tess_features.pkl"
+    
+    data = process_tess_dataset(
+        data_dir=str(data_dir), 
+        output_file=str(output_file)
+    )
