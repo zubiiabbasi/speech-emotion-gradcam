@@ -3,3 +3,4 @@ data/
 __pycache__/
 .github/
 audio_analysis/data_processing/tess_features.pkl
+audio_analysis/best_model.h5
