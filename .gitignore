@@ -1,3 +1,5 @@
 data/
 .venv/
 __pycache__/
+.github/
+audio_analysis/feature_extraction/tess_features.pkl
