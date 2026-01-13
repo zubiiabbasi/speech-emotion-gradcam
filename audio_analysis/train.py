@@ -13,7 +13,7 @@ from models import build_emotion_cnn, compile_model
 
 def load_features(features_file="data_processing/tess_features.pkl"):
 
-    # Find features file (works from audio_analysis/ or project root)
+    # Find features file (works from audio_analysis/or project root)
     possible_paths = [
         Path(features_file),
         Path("audio_analysis") / features_file,
@@ -55,7 +55,7 @@ def load_features(features_file="data_processing/tess_features.pkl"):
         return None, None, None, None
 
 
-def prepare_data(features, labels, test_size=0.2, random_state=42):
+def prepare_data(features, labels, test_size=0.3, random_state=42):
 
     X_train, X_test, y_train, y_test = train_test_split(
         features, labels,
@@ -64,9 +64,9 @@ def prepare_data(features, labels, test_size=0.2, random_state=42):
         stratify=labels  # Ensures balanced split
     )
     
-    print(f"Data Split:")
-    print(f"  Train samples: {X_train.shape[0]} (80%)")
-    print(f"  Test samples: {X_test.shape[0]} (20%)")
+    print(f"Data Split (70/30):")
+    print(f"  Train samples: {X_train.shape[0]} (70%)")
+    print(f"  Test samples: {X_test.shape[0]} (30%)")
     print(f"  Train shape: {X_train.shape}")
     print(f"  Test shape: {X_test.shape}\n")
     
@@ -141,7 +141,7 @@ def main():
     if features is None:
         return
     
-    # 2. Prepare data (80/20 split)
+    # 2. Prepare data (70/30 split)
     X_train, X_test, y_train, y_test = prepare_data(features, labels)
     
     # 3. Build model
