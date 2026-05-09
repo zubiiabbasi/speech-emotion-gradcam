@@ -10,17 +10,51 @@ from pathlib import Path
 from gtts import gTTS
 import warnings
 
+from data_processing.feature_extraction import normalize_mel_db
+from models.build_cnn import SparseCategoricalCrossentropyWithLabelSmoothing
+
 warnings.filterwarnings('ignore')
 
 
+def _layer_class_strip_quantization(base):
+    """Keras 3.x can serialize quantization_config=None; older builds error on load."""
+
+    class _Compat(base):
+        @classmethod
+        def from_config(cls, config):
+            cfg = dict(config)
+            cfg.pop("quantization_config", None)
+            return super().from_config(cfg)
+
+    _Compat.__name__ = base.__name__
+    return _Compat
+
+
 def load_model(model_path="best_model.h5"):
-   
     model_path = Path(model_path)
-    
+
     if not model_path.exists():
         raise FileNotFoundError(f"Model not found at {model_path}")
-    
-    model = tf.keras.models.load_model(model_path)
+
+    # Layers that may carry quantization_config in saved configs (version skew).
+    layers_mod = tf.keras.layers
+    custom_objects = {
+        "Dense": _layer_class_strip_quantization(layers_mod.Dense),
+        "Conv2D": _layer_class_strip_quantization(layers_mod.Conv2D),
+        "BatchNormalization": _layer_class_strip_quantization(layers_mod.BatchNormalization),
+    }
+
+    model = tf.keras.models.load_model(
+        str(model_path),
+        compile=False,
+        custom_objects=custom_objects,
+    )
+    # Avoid optimizer / metric deserialization mismatches across TF/Keras versions.
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0003),
+        loss=SparseCategoricalCrossentropyWithLabelSmoothing(label_smoothing=0.1),
+        metrics=["accuracy"],
+    )
     return model
 
 
@@ -42,9 +76,7 @@ def preprocess_audio(audio_path, n_mels=128, n_fft=2048, hop_length=512, max_dur
         
         # Convert to dB scale (matching training)
         mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
-        
-        # DO NOT normalize - model was trained on raw dB values
-        
+
         # Pad or crop to (128, 128) with -80 constant (matching training)
         if mel_spec_db.shape[1] < 128:
             mel_spec_db = np.pad(
@@ -55,7 +87,9 @@ def preprocess_audio(audio_path, n_mels=128, n_fft=2048, hop_length=512, max_dur
             )
         else:
             mel_spec_db = mel_spec_db[:, :128]
-        
+
+        mel_spec_db = normalize_mel_db(mel_spec_db)
+
         # Add channel dimension
         mel_spec_final = np.expand_dims(mel_spec_db, axis=-1).astype(np.float32)
         

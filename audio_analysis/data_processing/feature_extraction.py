@@ -7,10 +7,16 @@ from pathlib import Path
 import pickle
 from sklearn.preprocessing import LabelEncoder
 
+
+def normalize_mel_db(mel_spec_db: np.ndarray) -> np.ndarray:
+    """Per-clip standardization after dB (same formula in inference.py)."""
+    return (mel_spec_db - mel_spec_db.mean()) / (mel_spec_db.std() + 1e-8)
+
+
 def extract_mel_spectrogram(audio_path, n_mels=128, n_fft=2048, hop_length=512, max_duration=5):
 
     try:
-        # Load audio with a maximum duration
+        # TESS utterances are ~1–2 s; this cap mainly limits pathological long files.
         y, sr = librosa.load(audio_path, sr=None, duration=max_duration)
         
         # Extract Mel-Spectrogram
@@ -33,7 +39,9 @@ def extract_mel_spectrogram(audio_path, n_mels=128, n_fft=2048, hop_length=512, 
         else:
             # Crop if too long
             mel_spec_db = mel_spec_db[:, :128]
-        
+
+        mel_spec_db = normalize_mel_db(mel_spec_db)
+
         return mel_spec_db
     
     except Exception as e:
@@ -52,6 +60,8 @@ def process_tess_dataset(data_dir="data", output_file="tess_features.pkl"):
     
     features = []
     labels = []
+    speakers = []
+    sentence_groups = []
     emotion_list = []
     
     # Map folder names to emotion labels (normalize case and spacing)
@@ -74,6 +84,13 @@ def process_tess_dataset(data_dir="data", output_file="tess_features.pkl"):
     
     for emotion_folder in emotion_folders:
         folder_name = emotion_folder.name
+
+        if folder_name.startswith("OAF_"):
+            folder_speaker = "OAF"
+        elif folder_name.startswith("YAF_"):
+            folder_speaker = "YAF"
+        else:
+            folder_speaker = "UNK"
         
         # Extract emotion label (remove speaker prefix like OAF_ or YAF_)
         emotion_label = folder_name.replace("OAF_", "").replace("YAF_", "").lower()
@@ -96,7 +113,25 @@ def process_tess_dataset(data_dir="data", output_file="tess_features.pkl"):
             if mel_spec is not None:
                 features.append(mel_spec)
                 labels.append(emotion)
-                
+                speakers.append(folder_speaker)
+
+                stem = audio_file.stem
+                sp = folder_speaker
+                prefix = f"{sp}_"
+                if stem.lower().startswith(prefix.lower()):
+                    rest = stem[len(prefix) :]
+                else:
+                    rest = stem
+                em_suffix = "_" + emotion
+                if rest.lower().endswith(em_suffix.lower()):
+                    sentence_only = rest[: -len(em_suffix)]
+                else:
+                    pieces = stem.split("_")
+                    sentence_only = (
+                        "_".join(pieces[1:-1]) if len(pieces) >= 3 else rest
+                    )
+                sentence_groups.append(f"{sp}_{sentence_only}")
+
                 if i % 50 == 0:
                     print(f"  Processed {i}/{len(audio_files)} files...")
         
@@ -115,6 +150,8 @@ def process_tess_dataset(data_dir="data", output_file="tess_features.pkl"):
     data = {
         'features': features,
         'labels': encoded_labels,
+        'speakers': np.array(speakers),
+        'sentence_groups': np.array(sentence_groups),
         'label_encoder': label_encoder,
         'emotion_list': sorted(emotion_list)
     }
