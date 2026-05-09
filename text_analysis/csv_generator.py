@@ -1,5 +1,7 @@
 """
-CSV Generator: Create tess_metadata.csv with Path, Emotion, and Transcript columns
+Build ``tess_metadata.csv`` (Path, Speaker, Emotion, Transcript) from Whisper ASR.
+
+Delegates transcript collection to ``extract_transcript.process_tess_directory``.
 """
 import csv
 from pathlib import Path

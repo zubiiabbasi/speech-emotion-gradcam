@@ -1,5 +1,8 @@
 """
-ASR Script: Extract transcripts from TESS audio files using Whisper
+Whisper-based ASR over TESS WAVs for the text-emotion baseline track.
+
+``process_tess_directory`` walks a data tree and returns path / transcript rows
+for CSV generation; not used by the mel-CNN training path.
 """
 import whisper
 from pathlib import Path

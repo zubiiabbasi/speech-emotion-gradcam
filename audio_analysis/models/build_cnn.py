@@ -1,7 +1,12 @@
 """
-Build CNN Model: Create a 2D CNN for emotion classification
-Input: (128, 128, 1) Mel-Spectrogram
-Output: 7 Emotions (Softmax)
+2-D CNN for (128, 128, 1) log-mel inputs → emotion softmax.
+
+Architecture: four conv blocks (16/32/64/128 filters, L2 on convs), batch norm,
+global average pool, dense 128 + dropout, then ``num_classes`` logits via softmax.
+
+``SparseCategoricalCrossentropyWithLabelSmoothing`` implements label smoothing
+for integer targets on Keras builds that lack ``label_smoothing`` on the stock
+sparse CE loss.
 """
 import tensorflow as tf
 from tensorflow import keras
@@ -35,7 +40,7 @@ class SparseCategoricalCrossentropyWithLabelSmoothing(keras.losses.Loss):
 
 
 def build_emotion_cnn(input_shape=(128, 128, 1), num_classes=7):
-    
+    """Sequential CNN; first conv may set ``input_shape`` for standalone build."""
     model = keras.Sequential([
         # Block 1 (16 filters — smaller capacity for ~1.4k samples)
         layers.Conv2D(16, kernel_size=(3, 3), activation='relu',
@@ -87,6 +92,7 @@ def build_emotion_cnn(input_shape=(128, 128, 1), num_classes=7):
 
 
 def compile_model(model, learning_rate=0.0003, label_smoothing=0.1):
+    """Adam + sparse label-smoothed cross-entropy + accuracy."""
     optimizer = keras.optimizers.Adam(learning_rate=learning_rate)
     loss = SparseCategoricalCrossentropyWithLabelSmoothing(label_smoothing=label_smoothing)
 

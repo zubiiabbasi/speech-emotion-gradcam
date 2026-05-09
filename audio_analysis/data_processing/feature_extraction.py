@@ -1,5 +1,11 @@
 """
-Feature Extraction: Load audio files, convert to Mel-Spectrograms, and pad to 128x128
+TESS audio → fixed-size log-mel spectrograms for CNN training.
+
+Each WAV under ``data/<OAF|YAF>_<emotion>/`` becomes a (128, 128) mel in dB,
+z-scored per clip, with channel dim added. ``process_tess_dataset`` writes
+``tess_features.pkl`` with ``features``, ``labels``, ``speakers`` (OAF/YAF),
+``sentence_groups`` (for phrase-level splits), ``label_encoder``, and
+``emotion_list``.
 """
 import librosa
 import numpy as np
@@ -14,6 +20,7 @@ def normalize_mel_db(mel_spec_db: np.ndarray) -> np.ndarray:
 
 
 def extract_mel_spectrogram(audio_path, n_mels=128, n_fft=2048, hop_length=512, max_duration=5):
+    """Return (128, 128) log-mel normalized per clip, or None on failure."""
 
     try:
         # TESS utterances are ~1–2 s; this cap mainly limits pathological long files.
@@ -50,6 +57,7 @@ def extract_mel_spectrogram(audio_path, n_mels=128, n_fft=2048, hop_length=512, 
 
 
 def process_tess_dataset(data_dir="data", output_file="tess_features.pkl"):
+    """Walk TESS folders, extract mels, encode labels, pickle one dataset dict."""
 
     data_path = Path(data_dir)
     output_path = Path(output_file)

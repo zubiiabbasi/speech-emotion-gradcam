@@ -1,6 +1,4 @@
-"""
-Models module - CNN architecture and model utilities
-"""
+"""CNN builder, compiler, and label-smoothed loss for TESS emotion recognition."""
 from .build_cnn import (
     SparseCategoricalCrossentropyWithLabelSmoothing,
     build_emotion_cnn,

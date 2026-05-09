@@ -1,6 +1,10 @@
 """
-Inference Pipeline for Speech Emotion Recognition
+Inference for the TESS mel-CNN: load weights, preprocess like training, predict, Grad-CAM, TTS.
 
+``load_model`` handles Keras version skew (e.g. drops ``quantization_config`` from
+saved layer configs) then recompiles with the same optimizer, LR, and
+label-smoothed sparse loss as ``compile_model``. ``preprocess_audio`` mirrors
+``feature_extraction.extract_mel_spectrogram`` (mel params, pad, per-clip norm).
 """
 
 import numpy as np

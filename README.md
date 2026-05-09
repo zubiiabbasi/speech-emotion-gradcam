@@ -1,162 +1,165 @@
 # speech-emotion-gradcam
 
-Speech emotion recognition on the TESS dataset using mel-spectrograms + a CNN, with explainability via Grad-CAM and an inference demo that can also speak the predicted emotion (TTS).
-
-This repo contains two tracks:
-
-- **Audio emotion recognition** (TensorFlow/Keras CNN + Grad-CAM)
-- **Text emotion analysis** (Whisper ASR + classic ML in `text_analysis/`)
+Speech emotion recognition on the **Toronto Emotional Speech Set (TESS)** using log-mel spectrograms and a **2-D CNN**, with **Grad-CAM** explanations and an optional **TTS** inference demo. A separate **text** track uses Whisper transcripts to show why lexical content alone is insufficient for TESS.
 
 ---
 
-## What we built
+## Research summary
 
-### Audio pipeline (end-to-end)
+### Problem and motivation
 
-1. **Feature extraction**: converts each `.wav` to a 128×128 mel-spectrogram (dB) and saves a pickle dataset.
-2. **Training**: trains a CNN and saves the best model checkpoint to `audio_analysis/best_model.h5`.
-3. **Evaluation notebook**: reports accuracy, classification report, confusion matrix, and per-class accuracy.
-4. **Inference demo notebook**:
-	 - predicts emotion for a chosen audio file
-	 - plays TTS saying the predicted emotion
-	 - visualizes Grad-CAM heatmaps on the spectrogram
+TESS provides acted emotional speech from **two speakers** (Older Adult Female **OAF**, Young Adult Female **YAF**) with **fixed sentence content** repeated across emotions. Prosody carries emotion; transcript text is largely shared. Naive **random train/test splits** leak information: the same sentence under different emotions can appear in both train and test, and speaker identity is mixed, so reported accuracy can approach **100%** while **generalization** to unseen speakers or strictly held-out linguistic content is not measured.
 
-### Explainability
+### Real-life scenario: train on OAF, validate on YAF
 
-Grad-CAM is implemented for the CNN to highlight time–frequency regions that most influenced the predicted class.
+By default we **do not mix speakers** in training versus tuning. **All Older Adult Female (OAF) clips are used for training** (with on-the-fly augmentation). **All Young Adult Female (YAF) clips are used only as held-out data**: the same YAF tensors serve as **`validation_data` during `model.fit`** (early stopping, checkpoint, learning-rate schedule) **and** as the **test set** in the evaluation notebook. The model never sees YAF spectrograms in gradient updates—only OAF—so metrics reflect **cross-speaker generalization**, analogous to building a system on one voice profile and measuring performance on **another speaker**, which is much closer to a **realistic deployment** question than a random split on pooled OAF+YAF data.
+
+### What we implemented (audio track)
+
+| Topic | Approach |
+|--------|-----------|
+| **Evaluation protocol** | Default **speaker-independent split** (`TESS_SPLIT_MODE=speaker`): **train = OAF only**; **validation and reported test = YAF only** (same YAF hold-out for `fit` callbacks and for notebook evaluation). Optional `sentence_group` or `random` for ablations only. |
+| **Features** | Librosa **mel-spectrogram** → dB → pad/crop to **128×128**, **per-clip z-score** after dB. Pickle stores `features`, `labels`, `speakers`, `sentence_groups`, `label_encoder`, `emotion_list`. |
+| **Architecture** | Four conv blocks with filters **16→32→64→128**, **L2(5e-4)** on convs, **BatchNorm**, **GlobalAveragePooling**, **Dense(128)+Dropout**, softmax head. |
+| **Optimization** | **Adam lr=3e-4**, **sparse CE + label smoothing 0.1** (custom `SparseCategoricalCrossentropyWithLabelSmoothing` for Keras builds without native `label_smoothing` on sparse loss). |
+| **Regularization** | Dropout, L2, label smoothing; **gentle SpecAugment-style** augmentation (time/freq masks + Gaussian noise). |
+| **Augmentation** | **`tf.data`** pipeline: **fresh random augmentation every epoch** on training only; validation uses **unmodified** spectrograms. |
+| **Training control** | **ModelCheckpoint** (best `val_accuracy`), **EarlyStopping** (patience **25**, restore best weights), **ReduceLROnPlateau** (patience **8**, `min_lr=1e-6`). Up to **100** epochs in `main()`. |
+| **Reproducible evaluation** | `train.py` writes **`tess_eval_split.npz`** (train/test indices + split mode) next to `tess_features.pkl`; **`evaluate_model.ipynb`** reloads the **same** rows as training—no second random split. |
+| **Inference** | `load_model` strips unsupported **`quantization_config`** from saved configs when needed, then **recompiles** with the same loss/lr for stable `evaluate` / `predict`. |
+
+### Reported results (speaker split: OAF train, YAF test)
+
+These numbers come from the strict evaluation setup above (see also figures under **Visualizations**).
+
+| Metric | Value |
+|--------|--------|
+| **Overall accuracy** | **77.21%** |
+| **Test loss** | **1.2410** |
+
+**Per-emotion accuracy (YAF test):**
+
+| Emotion | Accuracy |
+|---------|----------|
+| angry | 64.00% |
+| disgust | 92.50% |
+| fear | 100.00% |
+| happy | 0.00% |
+| neutral | 100.00% |
+| pleasant_surprise | 98.50% |
+| sad | 85.50% |
+
+#### Why is **happy** at **0%** on YAF (not a “bug” in the metric)?
+
+Per-emotion accuracy here means: among all YAF test clips whose **true** label is *happy*, what fraction did the model **predict** as *happy*? **0%** means **no** YAF *happy* file was classified with *happy* as the argmax class—those samples were almost entirely assigned to **other** emotions (see the **confusion matrix** figure: the row for true *happy* will show which classes absorbed them). That is a **model + data phenomenon**, not an evaluation script error.
+
+Plausible reasons under an **OAF train / YAF test** protocol:
+
+1. **Cross-speaker emotion “shape”** — *Happy* for YAF may look in mel space more like another class the model learned from OAF (e.g. **angry** or **pleasant_surprise**: higher pitch / energy overlap), so the decision boundary never assigns the *happy* logit highest on YAF.
+2. **Only ~200 YAF test clips per class (TESS balance)** — one brittle class can collapse to 0% recall while overall accuracy stays moderate (~77%).
+3. **Acting and recording differences** — OAF “happy” prosody may not transfer to how YAF realizes “happy” in the same sentences, so the CNN’s OAF-biased features under-represent the YAF happy manifold.
+
+So the takeaway is: **speaker-general recognition is hard for some emotions**; *happy* is the clearest failure mode in this run. Retraining with swapped speakers (YAF train, OAF test), class weights, focal loss, or more data would be natural next experiments—not reverting to a leaky random split to “fix” the number.
+
+### Visualizations
+
+Static figures (commit under `audio_analysis/visualization/`):
+
+![Confusion matrix](audio_analysis/visualization/confusion%20matrix.png)
+
+![Per-emotion accuracy](audio_analysis/visualization/per%20emotion%20accuracy.png)
+
+![Grad-CAM example](audio_analysis/visualization/GradCam.png)
 
 ---
 
-## Key finding (why you can see 100% accuracy)
+## Repository layout
 
-On TESS, **very high / even 100% accuracy** can happen with a random per-sample split (like 70/30), even if your code is correct.
-
-Main reasons:
-
-- **Only two speakers** (OAF, YAF) → the model can learn speaker-specific cues.
-- **Repeated phrases across the dataset** → the model can partially memorize phrase/recording patterns.
-- A random split mixes speakers/phrases across train and test, so test data is not truly “unseen” in the way we care about for generalization.
-
-So: **perfect accuracy here is a sign the evaluation is not strict enough**, not necessarily a bug in feature extraction.
-
-Recommended “honest” evaluation options:
-
-- **Speaker-based split**: train on OAF, test on YAF (or vice-versa).
-- **Group split by speaker** (`GroupShuffleSplit` / `GroupKFold`) if you add speaker IDs per sample.
-- **Phrase-based split** (if you can reliably extract phrase IDs) to prevent phrase leakage.
-
----
-
-## Project structure
-
-- `audio_analysis/`
-	- `data_processing/feature_extraction.py` – mel-spectrogram feature extraction → pickle dataset
-	- `train.py` – training script (stratified 70/30 random split) → `best_model.h5`
-	- `inference.py` – preprocessing + prediction + Grad-CAM utilities
-	- `evaluate_model.ipynb` – evaluation report + confusion matrix + Grad-CAM visualization
-	- `inference_demo.ipynb` – interactive demo: prediction + TTS + Grad-CAM
-- `data/` – TESS-style folders (e.g. `OAF_happy/`, `YAF_angry/`, …)
-- `text_analysis/` – Whisper transcript extraction + TF-IDF/Naive Bayes notebook (separate track)
+| Path | Role |
+|------|------|
+| `audio_analysis/data_processing/feature_extraction.py` | TESS scan → mel tensors → **`tess_features.pkl`** (+ speaker / sentence group metadata). |
+| `audio_analysis/train.py` | Split, datasets, augmentation, fit, **`best_model.h5`**, **`tess_eval_split.npz`**. |
+| `audio_analysis/models/build_cnn.py` | CNN definition, custom label-smoothed loss, **`compile_model`**. |
+| `audio_analysis/inference.py` | Load model, preprocess (match training), predict, Grad-CAM, TTS helper. |
+| `audio_analysis/evaluate_model.ipynb` | Same split as training; metrics, plots, Grad-CAM. |
+| `audio_analysis/inference_demo.ipynb` | Single-file demo: prediction, confidence, TTS, Grad-CAM. |
+| `audio_analysis/visualization/` | Exported figures for README / reports. |
+| `data/` | TESS-style layout (`OAF_emotion/`, `YAF_emotion/`, …). Not committed if listed in `.gitignore`. |
+| `text_analysis/` | Exploratory **lexical baseline**: Whisper → CSV → TF-IDF + Naive Bayes (see below). |
 
 ---
 
 ## Setup
 
-1. Install dependencies:
-
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Ensure your data is present under `data/` (TESS folder layout).
+Place TESS audio under `data/` (see layout above).
 
 ---
 
-## Audio feature extraction
+## Audio pipeline (commands)
 
-This generates the feature pickle used by training/evaluation/inference.
+**1. Feature extraction**
 
 ```bash
 python audio_analysis/data_processing/feature_extraction.py
 ```
 
-Output:
+Output: `audio_analysis/data_processing/tess_features.pkl`
 
-- `audio_analysis/data_processing/tess_features.pkl`
-
-Contents include:
-
-- `features`: shape `(N, 128, 128, 1)`
-- `labels`: integer labels
-- `label_encoder`: sklearn `LabelEncoder`
-- `emotion_list`: list of class names
-
----
-
-## Train the CNN (audio)
+**2. Training** (from repo root or `audio_analysis/`, paths auto-resolve)
 
 ```bash
 python audio_analysis/train.py
 ```
 
-Output:
+With the default split (**real-life style**): **optimization uses OAF only**; **validation accuracy / loss are computed on YAF only** (held-out speaker), so checkpointing and early stopping target **generalization to the second speaker**, not memorization of YAF.
+
+Optional: `TESS_SPLIT_MODE=speaker` (default) | `sentence_group` | `random`
+
+Outputs:
 
 - `audio_analysis/best_model.h5`
+- `audio_analysis/data_processing/tess_eval_split.npz`
 
-Notes:
+**3. Evaluation**
 
-- Training currently uses a **stratified random 70/30** split.
-- This split is useful for sanity checks but may **overestimate real-world performance** on TESS.
+Open `audio_analysis/evaluate_model.ipynb` (set kernel cwd to **`audio_analysis`** so `from train import …` and `from inference import …` resolve). Requires the pickle, split npz, and `best_model.h5` from the same training run.
 
----
+**4. Inference demo**
 
-## Evaluate the trained model
-
-Open and run:
-
-- `audio_analysis/evaluate_model.ipynb`
-
-It reports:
-
-- test accuracy / loss
-- `classification_report`
-- confusion matrix heatmap
-- per-emotion accuracy bar plot
-- Grad-CAM visualization for sample classes
+Open `audio_analysis/inference_demo.ipynb`; set **`audio_path`** to a `.wav` under `data/`. Uses relative resolution for project root vs `audio_analysis/` cwd.
 
 ---
 
-## Inference demo (prediction + TTS + Grad-CAM)
+## Text analysis track (experiment only)
 
-Open and run:
+We added a small **text** branch **only as a controlled experiment**: *can emotion be predicted from words alone on TESS?* It is **not** meant to compete with the audio model; it answers a **research design** question about what signal remains after ASR.
 
-- `audio_analysis/inference_demo.ipynb`
+**Pipeline:**
 
-It will:
+1. **`extract_transcript.py`** — runs **OpenAI Whisper** on each WAV and returns plain text (word content; **no** pitch, timing, or stress).
+2. **`csv_generator.py`** — writes **`tess_metadata.csv`**: path, speaker, emotion, transcript.
+3. **`text_emotion_analysis.ipynb`** — **TF–IDF** bag-of-words + **Multinomial Naive Bayes** (classic lexical classifier) with a conventional train/test split on rows.
 
-- load the trained model + label encoder
-- pick an audio file (or you can set one)
-- predict emotion + show confidence distribution
-- generate in-memory TTS audio and play it in the notebook
-- compute Grad-CAM and overlay it on the mel-spectrogram
+**Why this experiment matters for TESS:**
+
+Across emotions, the **same underlying sentences** are spoken; only **delivery** changes. Whisper therefore yields **near-identical transcripts** for angry vs happy vs sad versions of the same line. The feature space is almost **emotion-orthogonal**: word counts barely differ by label, so the classifier has **little discriminative text signal**.
+
+**Outcome:** performance stays **far below** the mel-spectrogram CNN under a fair speaker split—consistent with the claim **you cannot predict TESS emotion reliably from text alone**. Emotion here lives in **how** things are said (**acoustic / prosodic** cues), which is exactly what the audio pipeline targets. The text track **supports** the choice to invest in mel features + CNN + Grad-CAM rather than transcripts-only models.
 
 ---
 
-## Text analysis track (why audio is needed)
+## References (informal)
 
-The `text_analysis/` folder contains an experiment to see if **transcripts alone can capture emotion**:
+- **TESS:** Toronto Emotional Speech Set (two actresses, English sentences × emotions).
+- **Grad-CAM:** Selvaraju et al., “Grad-CAM: Visual Explanations from Deep Networks.”
+- **SpecAugment:** Park et al., “SpecAugment: A Simple Data Augmentation Method for ASR.”
 
-- `extract_transcript.py` – uses OpenAI Whisper to transcribe TESS audio files
-- `csv_generator.py` – generates `tess_metadata.csv` with Path, Speaker, Emotion, and Transcript columns
-- `text_emotion_analysis.ipynb` – trains a Naive Bayes classifier on TF-IDF vectors of transcripts
+---
 
-### Key finding from text analysis
+## License / attribution
 
-**Transcripts alone do NOT carry emotional information reliably.**
-
-- The Naive Bayes text classifier achieves much lower accuracy than the audio CNN.
-- This is because the TESS dataset uses the same **neutral utterance text** across all emotions—only the speaker's **delivery and prosody** (pitch, tone, speed, stress) differ.
-- Whisper transcription discards all prosodic features, leaving only words that are identical across all emotions.
-- Therefore, **audio-based features (mel-spectrograms) are essential** to capture emotion.
-
-This validates our approach: **speech emotion ≠ word choice; it's about how you say it.**
+Use TESS according to its original terms. This repository documents a student/research-style pipeline for reproducibility and education.

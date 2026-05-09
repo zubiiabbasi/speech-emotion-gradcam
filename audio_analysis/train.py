@@ -1,8 +1,18 @@
 """
-Train CNN Model: Load features, train, and save best model.
-Uses a speaker-independent split for TESS (train OAF, test YAF) by default.
-Saves split indices to tess_eval_split.npz next to the pickle so evaluation
-reuses the same held-out set.
+Train the TESS mel-spectrogram CNN with strict splits and on-the-fly augmentation.
+
+Pipeline
+    Load ``tess_features.pkl`` → split (default: **train = OAF only**, **val =
+    YAF only** — held-out speaker for both validation metrics and notebook test)
+    → save ``tess_eval_split.npz`` → build model → ``tf.data`` train set
+    (shuffle + ``augment_mel_spec`` each epoch) / val set (YAF, no aug) →
+    ``model.fit`` with checkpoint, early stopping, and LR reduction.
+
+Environment
+    ``TESS_SPLIT_MODE``: ``speaker`` (default) | ``sentence_group`` | ``random``.
+
+Outputs
+    ``best_model.h5`` (project cwd), ``tess_eval_split.npz`` beside the features pickle.
 """
 import os
 import pickle
@@ -222,6 +232,7 @@ def make_dataset(X, y, batch_size, augment=False, shuffle=False):
 
 
 def create_callbacks(model_name="best_model.h5"):
+    """Checkpoint on val_accuracy; early stop patience 25; ReduceLROnPlateau patience 8, min_lr 1e-6."""
     return [
         ModelCheckpoint(
             filepath=model_name,
@@ -232,7 +243,7 @@ def create_callbacks(model_name="best_model.h5"):
         ),
         EarlyStopping(
             monitor="val_accuracy",
-            patience=20,
+            patience=25,
             restore_best_weights=True,
             verbose=1,
         ),
@@ -246,7 +257,8 @@ def create_callbacks(model_name="best_model.h5"):
     ]
 
 
-def train_model(model, train_ds, val_ds, epochs=50):
+def train_model(model, train_ds, val_ds, epochs=100):
+    """Fit ``model`` on ``train_ds`` / ``val_ds`` (tf.data); uses ``create_callbacks``."""
     print(f"\n{'=' * 70}")
     print("TRAINING EMOTION RECOGNITION CNN")
     print(f"{'=' * 70}")
@@ -294,7 +306,7 @@ def main():
     )
     print(f"Train samples per epoch: {len(X_train)} (fresh augmentation each pass)\n")
 
-    train_model(model, train_ds, val_ds, epochs=50)
+    train_model(model, train_ds, val_ds, epochs=100)
 
 
 if __name__ == "__main__":
