@@ -14,6 +14,8 @@ TESS provides acted emotional speech from **two speakers** (Older Adult Female *
 
 By default we **do not mix speakers** in training versus tuning. **All Older Adult Female (OAF) clips are used for training** (with on-the-fly augmentation). **All Young Adult Female (YAF) clips are used only as held-out data**: the same YAF tensors serve as **`validation_data` during `model.fit`** (early stopping, checkpoint, learning-rate schedule) **and** as the **test set** in the evaluation notebook. The model never sees YAF spectrograms in gradient updates—only OAF—so metrics reflect **cross-speaker generalization**, analogous to building a system on one voice profile and measuring performance on **another speaker**, which is much closer to a **realistic deployment** question than a random split on pooled OAF+YAF data.
 
+**Train/test size (speaker mode):** this is **not** a 70/30 split. With standard TESS balance you get **one full speaker vs the other** — typically **~50% / ~50%** of all clips (e.g. 1400 OAF train / 1400 YAF eval). The **`test_size=0.3`** argument in code applies only to **`sentence_group`** and **`random`** modes, not to **`speaker`**.
+
 ### What we implemented (audio track)
 
 | Topic | Approach |
@@ -103,11 +105,16 @@ Place TESS audio under `data/` (see layout above).
 
 **1. Feature extraction**
 
+The script writes `tess_features.pkl` relative to your **current working directory**. To match where `train.py` looks by default (`audio_analysis/data_processing/tess_features.pkl` when the repo root is cwd), run from that folder:
+
 ```bash
-python audio_analysis/data_processing/feature_extraction.py
+cd audio_analysis/data_processing
+python feature_extraction.py
 ```
 
-Output: `audio_analysis/data_processing/tess_features.pkl`
+Alternatively, run from anywhere but move/rename the pickle to `audio_analysis/data_processing/tess_features.pkl`, or rely on `train.py` path resolution if you keep one canonical copy there.
+
+Output (recommended location): `audio_analysis/data_processing/tess_features.pkl`
 
 **2. Training** (from repo root or `audio_analysis/`, paths auto-resolve)
 
@@ -121,8 +128,8 @@ Optional: `TESS_SPLIT_MODE=speaker` (default) | `sentence_group` | `random`
 
 Outputs:
 
-- `audio_analysis/best_model.h5`
-- `audio_analysis/data_processing/tess_eval_split.npz`
+- **`best_model.h5`** — saved in the **shell’s current working directory** when you launch training (Keras `ModelCheckpoint` is relative to cwd; e.g. `cd audio_analysis` then `python train.py` → `audio_analysis/best_model.h5`).
+- **`tess_eval_split.npz`** — always next to the resolved features pickle (typically `audio_analysis/data_processing/tess_eval_split.npz`).
 
 **3. Evaluation**
 
@@ -148,7 +155,7 @@ We added a small **text** branch **only as a controlled experiment**: *can emoti
 
 Across emotions, the **same underlying sentences** are spoken; only **delivery** changes. Whisper therefore yields **near-identical transcripts** for angry vs happy vs sad versions of the same line. The feature space is almost **emotion-orthogonal**: word counts barely differ by label, so the classifier has **little discriminative text signal**.
 
-**Outcome:** performance stays **far below** the mel-spectrogram CNN under a fair speaker split—consistent with the claim **you cannot predict TESS emotion reliably from text alone**. Emotion here lives in **how** things are said (**acoustic / prosodic** cues), which is exactly what the audio pipeline targets. The text track **supports** the choice to invest in mel features + CNN + Grad-CAM rather than transcripts-only models.
+**Outcome:** the lexical classifier performs **poorly** on this task—consistent with **you cannot predict TESS emotion reliably from words alone** after ASR. (The notebook uses its **own** train/test split on transcript rows; it is **not** forced to match the OAF/YAF speaker protocol, but the conclusion still holds: **shared wording** leaves almost no text signal.) Emotion lives in **how** things are said (**acoustic / prosodic** cues), which is what the mel + CNN pipeline targets. The text track **supports** investing in audio features + Grad-CAM rather than transcripts-only models.
 
 ---
 
