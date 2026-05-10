@@ -32,7 +32,9 @@ By default we **do not mix speakers** in training versus tuning. **All Older Adu
 
 ### Reported results (speaker split: OAF train, YAF test)
 
-These numbers come from the strict evaluation setup above (see also figures under **Visualizations**).
+These numbers come from the strict evaluation setup above (see also figures under **Visualizations**). They reflect **`evaluate_model.ipynb`** run against **`best_model.h5`** from **`train.py`** with default hyperparameters and **`TESS_SPLIT_MODE=speaker`**, together with the matching **`tess_features.pkl`** and **`tess_eval_split.npz`** from that training run. The PNGs under **`audio_analysis/visualization/`** were exported from the same evaluation.
+
+**Reproducibility:** Non-determinism from TensorFlow (e.g. GPU ops, some `tf.data` paths) can shift metrics slightly across reruns even with fixed split indices. For bit-for-bit parity, use TensorFlow’s determinism flags / CPU-only runs or archive the **`best_model.h5`** and split **`.npz`** used for the paper or report. After a successful install, `pip freeze > requirements-lock.txt` captures exact package versions for your machine.
 
 | Metric | Value |
 |--------|--------|
@@ -93,7 +95,12 @@ Static figures (commit under `audio_analysis/visualization/`):
 
 ## Setup
 
+**Runtime (tested / expected):** **Python 3.10–3.12** (e.g. 3.11.x). **TensorFlow 2.13+** (2.x line; Keras 3–compatible builds work with the saved-model loader in `inference.py`). GPU training is optional—follow [TensorFlow’s install guide](https://www.tensorflow.org/install) for matching CUDA/cuDNN if you use a GPU.
+
 ```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Unix/macOS: source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -124,7 +131,13 @@ python audio_analysis/train.py
 
 With the default split (**real-life style**): **optimization uses OAF only**; **validation accuracy / loss are computed on YAF only** (held-out speaker), so checkpointing and early stopping target **generalization to the second speaker**, not memorization of YAF.
 
-Optional: `TESS_SPLIT_MODE=speaker` (default) | `sentence_group` | `random`
+**Split mode** (`speaker` default; alternatives `sentence_group`, `random`):
+
+| Shell | Example |
+|--------|---------|
+| **bash / zsh** | `export TESS_SPLIT_MODE=sentence_group` then `python audio_analysis/train.py` |
+| **PowerShell** | `$env:TESS_SPLIT_MODE="sentence_group"; python audio_analysis/train.py` |
+| **cmd.exe** | `set TESS_SPLIT_MODE=sentence_group` then `python audio_analysis/train.py` |
 
 Outputs:
 
@@ -149,7 +162,7 @@ We added a small **text** branch **only as a controlled experiment**: *can emoti
 
 1. **`extract_transcript.py`** — runs **OpenAI Whisper** on each WAV and returns plain text (word content; **no** pitch, timing, or stress).
 2. **`csv_generator.py`** — writes **`tess_metadata.csv`**: path, speaker, emotion, transcript.
-3. **`text_emotion_analysis.ipynb`** — **TF–IDF** bag-of-words + **Multinomial Naive Bayes** (classic lexical classifier) with a conventional train/test split on rows.
+3. **`text_emotion_analysis.ipynb`** — **TF-IDF** bag-of-words + **Multinomial Naive Bayes** (classic lexical classifier) with a conventional train/test split on rows.
 
 **Why this experiment matters for TESS:**
 
@@ -159,11 +172,12 @@ Across emotions, the **same underlying sentences** are spoken; only **delivery**
 
 ---
 
-## References (informal)
+## References
 
-- **TESS:** Toronto Emotional Speech Set (two actresses, English sentences × emotions).
-- **Grad-CAM:** Selvaraju et al., “Grad-CAM: Visual Explanations from Deep Networks.”
-- **SpecAugment:** Park et al., “SpecAugment: A Simple Data Augmentation Method for ASR.”
+- **TESS (Toronto Emotional Speech Set):** K. Dupuis and M. K. Pichora-Fuller. *Toronto emotional speech set (TESS).* University of Toronto, Department of Computer Science, 2010. Persistent identifier: [doi:10.5683/SP2/E8H2MF](https://doi.org/10.5683/SP2/E8H2MF). Host copies include [U of T TSpace](https://tspace.library.utoronto.ca/handle/1807/24487) and [Borealis Dataverse](https://borealisdata.ca/dataset.xhtml?persistentId=doi:10.5683/SP2/E8H2MF).
+- **Grad-CAM:** R. R. Selvaraju *et al.*, “Grad-CAM: Visual Explanations from Deep Networks via Gradient-Based Localization.” *Proc. IEEE ICCV*, 2017. [arXiv:1610.02391](https://arxiv.org/abs/1610.02391).
+- **SpecAugment:** D. S. Park *et al.*, “SpecAugment: A Simple Data Augmentation Method for Automatic Speech Recognition.” *Proc. INTERSPEECH*, 2019. [arXiv:1904.08779](https://arxiv.org/abs/1904.08779).
+- **Whisper (text track):** A. Radford *et al.*, “Robust Speech Recognition via Large-Scale Weak Supervision.” *Proc. ICML*, 2023. [arXiv:2212.04356](https://arxiv.org/abs/2212.04356).
 
 ---
 
