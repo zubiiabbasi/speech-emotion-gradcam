@@ -1,22 +1,28 @@
 # TESS Speech Emotion Recognition with CNNs and Grad-CAM
-
-Speech emotion recognition on the **Toronto Emotional Speech Set (TESS)** using log-mel spectrograms and a **2-D CNN**, with **Grad-CAM** explanations and an optional **TTS** inference demo. A separate **text** track uses Whisper transcripts to show why lexical content alone is insufficient for TESS.
+  
+**Keywords:** speech emotion recognition; TESS; log-mel spectrogram; convolutional neural network; Grad-CAM; cross-speaker evaluation; speaker-independent protocol
 
 ---
 
-## Research summary
+## Abstract
 
-### Problem and motivation
+This repository implements a **speaker-independent** evaluation of emotion classification on TESS: **train on Older Adult Female (OAF)** spectrograms, **validate and test on Young Adult Female (YAF)** held-out clips, so metrics reflect **cross-speaker generalization** rather than inflated scores from random pooling. The audio pipeline uses **log-mel features**, a **2-D CNN**, on-the-fly **SpecAugment-style** augmentation, **Grad-CAM** for visualization, and an optional **TTS**-based inference demo. A separate **lexical (TF-IDF + Naive Bayes)** experiment shows that transcript-level features carry little discriminative signal when sentence wording is shared across emotions.
+
+---
+
+## 1. Introduction and motivation
+
+### 1.1 Problem setting
 
 TESS provides acted emotional speech from **two speakers** (Older Adult Female **OAF**, Young Adult Female **YAF**) with **fixed sentence content** repeated across emotions. Prosody carries emotion; transcript text is largely shared. Naive **random train/test splits** leak information: the same sentence under different emotions can appear in both train and test, and speaker identity is mixed, so reported accuracy can approach **100%** while **generalization** to unseen speakers or strictly held-out linguistic content is not measured.
 
-### Real-life scenario: train on OAF, validate on YAF
+### 1.2 Cross-speaker protocol (OAF train, YAF validation / test)
 
 By default we **do not mix speakers** in training versus tuning. **All Older Adult Female (OAF) clips are used for training** (with on-the-fly augmentation). **All Young Adult Female (YAF) clips are used only as held-out data**: the same YAF tensors serve as **`validation_data` during `model.fit`** (early stopping, checkpoint, learning-rate schedule) **and** as the **test set** in the evaluation notebook. The model never sees YAF spectrograms in gradient updates—only OAF—so metrics reflect **cross-speaker generalization**, analogous to building a system on one voice profile and measuring performance on **another speaker**, which is much closer to a **realistic deployment** question than a random split on pooled OAF+YAF data.
 
 **Train/test size (speaker mode):** this is **not** a 70/30 split. With standard TESS balance you get **one full speaker vs the other** — typically **~50% / ~50%** of all clips (e.g. 1400 OAF train / 1400 YAF eval). The **`test_size=0.3`** argument in code applies only to **`sentence_group`** and **`random`** modes, not to **`speaker`**.
 
-### What we implemented (audio track)
+### 1.3 Methods summary (audio track)
 
 | Topic | Approach |
 |--------|-----------|
@@ -30,9 +36,9 @@ By default we **do not mix speakers** in training versus tuning. **All Older Adu
 | **Reproducible evaluation** | `train.py` writes **`tess_eval_split.npz`** (train/test indices + split mode) next to `tess_features.pkl`; **`evaluate_model.ipynb`** reloads the **same** rows as training—no second random split. |
 | **Inference** | `load_model` strips unsupported **`quantization_config`** from saved configs when needed, then **recompiles** with the same loss/lr for stable `evaluate` / `predict`. |
 
-### Reported results (speaker split: OAF train, YAF test)
+### 1.4 Results (speaker split: OAF train, YAF test)
 
-These numbers come from the strict evaluation setup above (see also figures under **Visualizations**). They reflect **`evaluate_model.ipynb`** run against **`best_model.h5`** from **`train.py`** with default hyperparameters and **`TESS_SPLIT_MODE=speaker`**, together with the matching **`tess_features.pkl`** and **`tess_eval_split.npz`** from that training run. The PNGs under **`audio_analysis/visualization/`** were exported from the same evaluation.
+These numbers come from the strict evaluation setup above (see also **Section 1.5**). They reflect **`evaluate_model.ipynb`** run against **`best_model.h5`** from **`train.py`** with default hyperparameters and **`TESS_SPLIT_MODE=speaker`**, together with the matching **`tess_features.pkl`** and **`tess_eval_split.npz`** from that training run. The PNGs under **`audio_analysis/visualization/`** were exported from the same evaluation.
 
 **Reproducibility:** Non-determinism from TensorFlow (e.g. GPU ops, some `tf.data` paths) can shift metrics slightly across reruns even with fixed split indices. For bit-for-bit parity, use TensorFlow’s determinism flags / CPU-only runs or archive the **`best_model.h5`** and split **`.npz`** used for the paper or report. After a successful install, `pip freeze > requirements-lock.txt` captures exact package versions for your machine.
 
@@ -53,7 +59,7 @@ These numbers come from the strict evaluation setup above (see also figures unde
 | pleasant_surprise | 98.50% |
 | sad | 85.50% |
 
-#### Why is **happy** at **0%** on YAF (not a “bug” in the metric)?
+#### 1.4.1 Discussion: **happy** recall at **0%** on YAF (not a metric artifact)
 
 Per-emotion accuracy here means: among all YAF test clips whose **true** label is *happy*, what fraction did the model **predict** as *happy*? **0%** means **no** YAF *happy* file was classified with *happy* as the argmax class—those samples were almost entirely assigned to **other** emotions (see the **confusion matrix** figure: the row for true *happy* will show which classes absorbed them). That is a **model + data phenomenon**, not an evaluation script error.
 
@@ -65,9 +71,9 @@ Plausible reasons under an **OAF train / YAF test** protocol:
 
 So the takeaway is: **speaker-general recognition is hard for some emotions**; *happy* is the clearest failure mode in this run. Retraining with swapped speakers (YAF train, OAF test), class weights, focal loss, or more data would be natural next experiments—not reverting to a leaky random split to “fix” the number.
 
-### Visualizations
+### 1.5 Figures
 
-Static figures (commit under `audio_analysis/visualization/`):
+Static figures included under `audio_analysis/visualization/`:
 
 ![Confusion matrix](audio_analysis/visualization/confusion%20matrix.png)
 
@@ -77,7 +83,7 @@ Static figures (commit under `audio_analysis/visualization/`):
 
 ---
 
-## Repository layout
+## 2. Repository layout
 
 | Path | Role |
 |------|------|
@@ -93,7 +99,7 @@ Static figures (commit under `audio_analysis/visualization/`):
 
 ---
 
-## Setup
+## 3. Environment setup
 
 **Runtime (tested / expected):** **Python 3.10–3.12** (e.g. 3.11.x). **TensorFlow 2.13+** (2.x line; Keras 3–compatible builds work with the saved-model loader in `inference.py`). GPU training is optional—follow [TensorFlow’s install guide](https://www.tensorflow.org/install) for matching CUDA/cuDNN if you use a GPU.
 
@@ -108,7 +114,7 @@ Place TESS audio under `data/` (see layout above).
 
 ---
 
-## Audio pipeline (commands)
+## 4. Audio pipeline (commands)
 
 **1. Feature extraction**
 
@@ -154,9 +160,9 @@ Open `audio_analysis/inference_demo.ipynb`; set **`audio_path`** to a `.wav` und
 
 ---
 
-## Text analysis track (experiment only)
+## 5. Text analysis track (controlled baseline)
 
-We added a small **text** branch **only as a controlled experiment**: *can emotion be predicted from words alone on TESS?* It is **not** meant to compete with the audio model; it answers a **research design** question about what signal remains after ASR.
+This branch is a **controlled experiment**: *can emotion be predicted from words alone on TESS?* It is **not** intended to match the audio model’s performance; it isolates how much **lexical** signal remains after automatic speech recognition (**ASR**).
 
 **Pipeline:**
 
@@ -172,7 +178,7 @@ Across emotions, the **same underlying sentences** are spoken; only **delivery**
 
 ---
 
-## References
+## 6. References
 
 - **TESS (Toronto Emotional Speech Set):** K. Dupuis and M. K. Pichora-Fuller. *Toronto emotional speech set (TESS).* University of Toronto, Department of Computer Science, 2010. Persistent identifier: [doi:10.5683/SP2/E8H2MF](https://doi.org/10.5683/SP2/E8H2MF). Host copies include [U of T TSpace](https://tspace.library.utoronto.ca/handle/1807/24487) and [Borealis Dataverse](https://borealisdata.ca/dataset.xhtml?persistentId=doi:10.5683/SP2/E8H2MF).
 - **Grad-CAM:** R. R. Selvaraju *et al.*, “Grad-CAM: Visual Explanations from Deep Networks via Gradient-Based Localization.” *Proc. IEEE ICCV*, 2017. [arXiv:1610.02391](https://arxiv.org/abs/1610.02391).
@@ -181,6 +187,10 @@ Across emotions, the **same underlying sentences** are spoken; only **delivery**
 
 ---
 
-## License / attribution
+## 7. License and attribution
 
-Use TESS according to its original terms. This repository documents a student/research-style pipeline for reproducibility and education.
+**Software and documentation.** Copyright © 2026 **Zubair Abbas**. This repository’s **code and prose** are licensed under the **[MIT License](LICENSE)**.
+
+**Third-party data (TESS).** **Do not assume** this repo grants rights to the Toronto Emotional Speech Set. Obtain TESS from an official distributor (see **References**) and comply with the **dataset license** (commonly **CC BY-NC** on official mirrors—verify on the download page you use). This project **does not redistribute** TESS audio.
+
+**Models and APIs.** If you use **OpenAI Whisper**, **gTTS**, or other external tools, follow their respective licenses and terms.
