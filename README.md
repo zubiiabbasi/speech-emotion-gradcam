@@ -1,4 +1,4 @@
-# speech-emotion-gradcam
+# TESS Speech Emotion Recognition with CNNs and Grad-CAM
 
 Speech emotion recognition on the **Toronto Emotional Speech Set (TESS)** using log-mel spectrograms and a **2-D CNN**, with **Grad-CAM** explanations and an optional **TTS** inference demo. A separate **text** track uses Whisper transcripts to show why lexical content alone is insufficient for TESS.
 
